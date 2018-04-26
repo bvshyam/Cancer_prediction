@@ -1,0 +1,16 @@
+---
+title: "Task List"
+author: "Shyam BV"
+date: "April 26, 2018"
+output: html_document
+---
+
+## Tasks
+
+Below are the initial set of tasks which we need to perform
+
+1. Gather and read about the papers on this particular dataset.
+2. Update text in the Markdown file.
+3. Split between training and test dataset.
+4. Remove the unwanted or highly correlated predictors from correlation matrix by fitting models.
+5. Perform different transformations on the train dataset to create the model.

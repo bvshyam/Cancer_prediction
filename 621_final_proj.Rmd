@@ -1,0 +1,205 @@
+---
+title: "DATA 621 Final Project"
+#author: "Marco Siqueira Campos"
+date: "April 25th, 2018"
+output: 
+        pdf_document:
+                latex_engine: xelatex
+mainfont: Calibri Light 
+fontsize: 12pt
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+####DATA 621  
+####MSDS CUNY  
+
+#### Final Project 
+Wisconsin Diagnostic Breast Cancer (WDBC)
+
+### Team: Christopher Estevez and Marco Siqueira Campos.   
+ 
+ 
+### Project Description
+
+PLEASE CHRISTOPHER HERE
+
+Features are computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. They describe characteristics of the cell nuclei present in the image. 
+
+The mean, standard error, and "worst" or largest (mean of the three
+largest values) of these features were computed for each image,
+resulting in 30 features.  For instance, field 3 is Mean Radius, field
+13 is Radius SE, field 23 is Worst Radius.
+
+### 1. DATA EXPLORATION 
+
+Variable description
+
+1) ID number
+2) diagnosis (M = malignant, B = benign), this we changed for (1 = malignant, 0 = benign).
+
+Ten real-valued features are computed for each cell nucleus: 
+
+a) radius (mean of distances from center to points on the perimeter)
+b) texture (standard deviation of gray-scale values)
+c) perimeter
+d) area
+e) smoothness (local variation in radius lengths)
+f) compactness (perimeter^2 / area - 1.0)
+g) concavity (severity of concave portions of the contour)
+h) concave points (number of concave portions of the contour)
+i) symmetry
+j) fractal dimension ("coastline approximation" - 1)
+
+For each variable we have 3 different statistics: Mean, standard error and worst case.
+We have a total of 30 predictors.
+
+The change `diagnosis` predictor from malignant for 1, benign for 0, help us to see relationship beetwen the response and the predictors, and was done in this phase.
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#load libraries
+library(xlsx)
+library(psych)
+library(GGally)
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(pROC)
+library(car)
+library(leaps)
+library(sjstats)
+```
+
+```{r, echo=FALSE, cache=TRUE}
+#load dataset 
+WDBCdata<-read.xlsx("./data/data_with groups.xlsx", sheetName = "ics data")
+```
+
+```{r, echo=FALSE, cache=TRUE}
+# First step the id will be removed to avoid any future trouble
+# change M = malignant for 1 and B for B = benign for zero
+WDBCdata$mycol<-NULL
+WDBCdata$id<-NULL
+WDBCdata$diagnosis<-ifelse(WDBCdata$diagnosis == "B", 0, 1)
+```
+
+Summary statistics
+
+```{r, echo=FALSE}
+#summary stats
+WDBC_tbl<-describe(WDBCdata,IQR=T)[,c(1:5,8:10,11,12)]
+knitr::kable(round(WDBC_tbl,2), caption = "Selected Stats")
+rm(WDBC_tbl)
+```
+
+Histograms
+
+```{r, echo=FALSE, fig.width=7, fig.height=8, message=F, warning=F}
+library(Hmisc)
+hist.data.frame(WDBCdata, n.unique=1, mtitl = "Breast Cancer Histogram")
+```
+\begin{center}
+fig. 1
+\end{center}
+
+
+BOX-PLOT
+
+```{r ,echo=FALSE, fig.align="center", fig.height=4, fig.width=6}
+# boxplot
+par(cex.axis=0.8) # is for x-axis
+boxplot(WDBCdata[,c(2:15)], las=2, col="red", main="Breast Cancer Box-Plot" )
+boxplot(WDBCdata[,c(16:31)], las=2, col="red", main="Breast Cancer Box-Plot" )
+
+```
+\begin{center}
+fig. 2
+\end{center}
+
+BOX-PLOT
+
+```{r ,echo=FALSE, fig.align="center", fig.height=4, fig.width=6}
+# boxplot
+par(cex.axis=0.8) # is for x-axis
+boxplot(WDBCdata[,c(2:15)], las=2, col="green", main="Breast Cancer Box-Plot, y axis changed", ylim = c(0,150))
+boxplot(WDBCdata[,c(16:31)], las=2, col="green", main="Breast Cancer Box-Plot, y axis changed", ylim = c(0,150))
+
+```
+\begin{center}
+fig. 2
+\end{center}
+
+
+Correlation matrix
+
+```{r ,echo=FALSE}
+ggcorr(WDBCdata, nbreaks=8, palette='PRGn', label=TRUE, label_size=2, size = 1.8, label_color='black') + ggtitle("Breast Cancer Correlation Matrix") + theme(plot.title = element_text(hjust = 0.5, color = "grey15"))
+```
+
+Correlation list (only high correlation values, r>0.9)
+```{r ,echo=FALSE}
+z = cor(WDBCdata)
+
+z = round(z,4)
+z[abs(z)<0.9]=NA # remove low relationship
+z[lower.tri(z,diag=TRUE)]=NA  #Prepare to drop duplicates and meaningless information
+z=as.data.frame(as.table(z))  #Turn into a 3-column table
+z=na.omit(z)  #Get rid of the junk we flagged above
+z=z[order(-abs(z$Freq)),]    #Sort by highest correlation (whether +ve or -ve)
+z
+rm(z)
+```
+
+Summary of data explorations findings:
+
+- Most histograms present very asymmetric behavior with similar to exponential distribution.
+- Some predictor look like exponential distribuition as `radius_se`, `perimeter_se`, `area_se`, `concavity_se` and `fractal_dimension_se`.
+- There is no true outliers, the outliers at box-plot is due the kind of distribution.
+- There is no missing.
+- we identified 21 pairs of highly correlated predictors, r> 0.9, this was due to the choice of predictors that are associated, measures things related: radius, perimeter and area.
+- There are 14 predictors related with the response, `Diagnosis`, with r>=0.6, this is a good news.  
+
+###2. DATA PREPARATION
+
+The to solve the issues the follow activities will be done:
+
+- Solve high correlations values, remove predictors with r>0.95.
+- Verify the data behavior of power transformation for the follow predictors: `radius_se`, `perimeter_se`, `area_se`, `concavity_se` and `fractal_dimension_se`.
+
+FIRST WE NEED REMOVE the PREDICTORS HOWEVER WHE NEED RUN THE MODEL TO CHOSE WHAT PREDICTOR TO REMOVE
+
+Power transformation check (HERE IS THE SAME, WE NEED TEST IS THE CHANGE IMPROVE OR NOT THE MODEL, HERE IS ONLY TO CHECK IF THE POWER CAN IMPROVE THE DISTRIBUTION)
+
+```{r ,echo=FALSE,fig.align="center", fig.height=4, fig.width=6}
+
+bc1<-BoxCoxTrans(WDBCdata$radius_se)
+bc2<-BoxCoxTrans(WDBCdata$perimeter_se)
+bc3<-BoxCoxTrans(WDBCdata$area_se )
+#bc4<-BoxCoxTrans(WDBCdata$concavity_se)
+bc5<-BoxCoxTrans(WDBCdata$fractal_dimension_se)
+
+par(mfrow=c(1,2))
+hist(WDBCdata$radius_se)
+hist(WDBCdata$radius_se^bc1$lambda)
+par(mfrow=c(1,2))
+hist(WDBCdata$perimeter_se)
+hist(WDBCdata$perimeter_se^bc2$lambda)
+par(mfrow=c(1,2))
+hist(WDBCdata$area_se)
+hist(WDBCdata$area_se^bc3$lambda)
+par(mfrow=c(1,2))
+hist(WDBCdata$fractal_dimension_se)
+hist(WDBCdata$fractal_dimension_se^bc5$lambda)
+par(mfrow=c(1,1))
+
+```
+
+
+REFERENCES:  
+[1] Dua, D. and Karra Taniskidou, E. (2017). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.    
+[2] https://stackoverflow.com/questions/7074246/show-correlations-as-an-ordered-list-not-as-a-large-matrix
+
