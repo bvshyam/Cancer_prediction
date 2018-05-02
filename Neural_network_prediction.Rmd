@@ -1,0 +1,88 @@
+---
+title: "Neural Network Prediction"
+author: "Shyam BV"
+date: "May 2, 2018"
+output: html_document
+---
+
+```{r}
+library(keras)
+library(dplyr)
+library(pROC)
+library(caret)
+
+df = WDBCdata
+
+head(df)
+```
+
+
+
+```{r}
+set.seed(40)
+#Random numbers
+randomobs <- sample(seq_len(nrow(df)), size = floor(0.7 * nrow(df)))
+
+# Train dataset
+train.df <- df[randomobs,]
+
+#Test dataset
+test.df <- df[-randomobs,]
+
+```
+
+
+```{r}
+
+
+train_x <- train.df %>% select(-diagnosis) %>% scale()
+train_x_s <- scale(train_x)
+
+train_y <- train.df %>% select(diagnosis)%>% as.matrix() %>% to_categorical()
+
+test_x <- test.df %>% select(-diagnosis) 
+test_x_s <- scale(test_x)
+
+test_y <- test.df %>% select(diagnosis)%>% as.matrix()
+
+summary(model)
+
+```
+
+```{r}
+
+
+model <- keras_model_sequential() 
+
+model %>% layer_dense(units = 8, activation = 'relu', input_shape = c(30)) %>% 
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 2)
+
+model %>% compile(loss='categorical_crossentropy',optimizer='rmsprop',metrics='accuracy')
+
+history = model %>% fit(train_x_s,train_y, epochs=10,batch_size = 8,validation_split = 0.2)
+
+
+```
+
+
+
+```{r}
+preds <- predict_classes(model, test_x_s)
+
+
+confusionMatrix(data = preds,
+                reference = test_y,
+                positive = "1")
+
+
+
+knitr::kable(head(final))
+```
+
+
+
+
+
+
+

@@ -10,8 +10,18 @@ fontsize: 12pt
 
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+********
+
+
+\newpage 
+
+# **Breast Cancer prediction : Predicting the breast cancer by characteristics of the cell nuclei present in the image**
+
+********
+
+```{r global_options, include=TRUE,echo=TRUE , warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
 ```
 
 ####DATA 621  
@@ -72,6 +82,8 @@ library(pROC)
 library(car)
 library(leaps)
 library(sjstats)
+library(Hmisc)
+
 ```
 
 ```{r, echo=FALSE, cache=TRUE}
@@ -99,7 +111,6 @@ rm(WDBC_tbl)
 Histograms
 
 ```{r, echo=FALSE, fig.width=7, fig.height=8, message=F, warning=F}
-library(Hmisc)
 hist.data.frame(WDBCdata, n.unique=1, mtitl = "Breast Cancer Histogram")
 ```
 \begin{center}
