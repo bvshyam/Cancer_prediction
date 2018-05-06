@@ -210,6 +210,15 @@ par(mfrow=c(1,1))
 ```
 
 
+
+
+```{r}
+
+```
+
+
+
+
 REFERENCES:  
 [1] Dua, D. and Karra Taniskidou, E. (2017). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.    
 [2] https://stackoverflow.com/questions/7074246/show-correlations-as-an-ordered-list-not-as-a-large-matrix
