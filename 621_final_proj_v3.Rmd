@@ -88,6 +88,8 @@ library(Hmisc)
 library(PerformanceAnalytics)
 library(factoextra)
 library(BGLR)
+library(keras)
+library(dplyr)
 ```
 
 
@@ -484,6 +486,7 @@ summary(model_21_bayes)
 
 
 print(paste0("Intercept: ",model_21_bayes$mu))
+print("Coefficents:")
 print(model_21_bayes$bF)
 
 
@@ -493,27 +496,12 @@ print(model_21_bayes$bF)
 
 
 
+### **Cubist Model **
 
+Cubist is a prediction-oriented regression model that combines the ideas in Quinlan (1992) and Quinlan (1993).  
+Although it initially creates a tree structure, it collapses each path through the tree into a rule. A regression model is fit for each rule based on the data subset defined by the rules. The set of rules are pruned or possibly combined. and the candidate variables for the linear regression models are the predictors that were used in the parts of the rule that were pruned away. This part of the algorithm is consistent with the "M5" or Model Tree approach.  
+Cubist generalizes this model to add boosting (when committees > 1) and instance based corrections (see predict.cubist()). The number of instances is set at prediction time by the user and is not needed for model building.
 
-
-
-
-```{r, echo=FALSE, cache=TRUE}
-model_logit<-glm( train_y~. -symmetry_se -concave.points_worst -texture_se -perimeter_se 
-                  -fractal_dimension_mean -symmetry_mean -texture_mean -concave.points_mean
-                  -compactness_worst -symmetry_worst -smoothness_se -smoothness_mean -area_se -radius_se,family=binomial,data=train_x)
-summary(model_logit)
-``` 
-
-## **Logistic Model(Probit):**
-
-Now lets try a Probit model which 
-
-
-
-
-
-**Cubist Model:**
 
 ```{r, echo=FALSE, cache=TRUE}
 set.seed(123)
@@ -524,7 +512,7 @@ n<-c(0,1,3,5,7)
 
 
 
-cube_fit<-train(train_x,train_y, method="cubist",
+model_31_cubit<-train(train_x,train_y, method="cubist",
                 preProcess = c("center", "scale"),
                 tuneGrid = expand.grid(committees=c,neighbors=n),
                 trControl = ctrl)
@@ -544,48 +532,108 @@ fig. 4
 \end{center}
 
 
-###3.1 MODEL ANALYSIS AND DIAGNOSTIC 
+### Neural Network Model
 
-Several models was tested, were the best performance model with linear and rule basead/tree mode was chosen.
+In this model, we will try out neural network and perform predictions on using it.
 
+```{r}
 
-The predited data, response, was converted to dicrete 0/1.  
+train_x_s <- scale(train_x)
+train_y_cat <- train_y %>% as.matrix() %>% to_categorical()
 
+test_x_s <- scale(test_x)
 
-
-**PERFORMANCE ANALYSIS WITH TRAIN DATA**
-
-**Logistic Model**
-```{r, echo=FALSE, cache=TRUE}
-logit_pred_train <- ifelse(predict(model_logit) > 0.5,1,0)
-conf_logit<-confusionMatrix(logit_pred_train,train_y,positive="1")
-conf_logit
-``` 
-  
-**Cubist Model**
-```{r, echo=FALSE, cache=TRUE, warning=FALSE}
-cube_pred_train <- ifelse(predict(cube_fit) > 0.5,1,0)
-conf_cube<-confusionMatrix(cube_pred_train,train_y,positive="1")
-conf_cube
-``` 
-
-  
-**PERFORMANCE ANALYSIS WITH TEST DATA**
+test_y_cat <- test_y %>% as.matrix()
 
 
-**Logistic Model**
-```{r, echo=FALSE, cache=TRUE}
-logit_pred_test <- ifelse(predict(model_logit, newdata=test_x) > 0.5,1,0)
-conf_test_logit <- confusionMatrix(logit_pred_test,test_y,positive="1")
-conf_test_logit
+model_41_neural <- keras_model_sequential() 
+
+model_41_neural %>% layer_dense(units = 8, activation = 'relu', input_shape = c(30)) %>% 
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 2, activation = 'softmax')
+
+model_41_neural %>% compile(loss='categorical_crossentropy',optimizer='rmsprop',metrics='accuracy')
+
+history = model_41_neural %>% fit(train_x_s,train_y_cat, epochs=50,batch_size = 8,validation_split = 0.2)
+
 ```
 
-**Cubist Model**
-```{r, echo=FALSE, cache=TRUE}
-cube_pred_test <-  ifelse(predict(cube_fit, newdata=test_x) > 0.5,1,0)
-conf_test_cube<-confusionMatrix(cube_pred_test,test_y,positive="1")
-conf_test_cube
+
+
+### MODEL ANALYSIS AND DIAGNOSTIC 
+
+In below section, we will test several models and select the best model out of it.
+
+
+```{r}
+
+# Function for printing confusion matrix
+confusion_analysis <- function(df,model){
+  # Threshold value is 0.5, positive class is 1
+  
+  predicted = if_else(predict(model,df)>=0.5, 1,0)
+  confusionMatrix(data = predicted,
+                reference = df$Diagnosis,
+                positive = "1")
+}
+
+# Function for calculating evaluation metrics
+summary_analysis <- function(df,model){
+  print(summary(model))
+  print(paste0("BIC: ",BIC(model)))
+  print(paste0("VIF: ",vif(model)))
+
+  n = length(df$target)
+  print(paste0("Naglekerke-pseudo-R2:",(1-exp((model$dev-model$null)/n))/(1-exp(-model$null/n))))
+  print("Confusion Matrix:")
+  confusion_analysis(df,model)
+}
+
+
 ```
+
+
+```{r}
+
+
+
+confusion_analysis(cbind(test_x,Diagnosis = test_y),model_13_logit_corr_final)
+confusion_analysis(cbind(test_x,Diagnosis = test_y),model_15_probit)
+
+confusion_analysis(cbind(test_x,Diagnosis = test_y),model_31_cubit)
+
+
+```
+
+```{r include=FALSE, echo=FALSE,   warning=FALSE, message=FALSE}
+rocCurve <- roc(response = test_y,
+                predictor = predict(model_31_cubit,newdata = test_x),
+                  levels = c(1,0))
+```
+
+
+
+```{r include=TRUE, echo=FALSE,   warning=FALSE, message=FALSE}
+
+
+print('ROC Curve:')
+auc(rocCurve)
+
+
+plot(y = rocCurve$sensitivities, ylab = "Sensitivity", x = 1 - rocCurve$specificities, xlab = "1 - Specificity",
+main = "ROC Curve", col = "red")
+```
+
+
+
+Things to do
+
+# additional Non-parametric models
+# Additional diagnostic plots
+# Paperwrite and comments
+# Shiny app - if required
+# Presentation
 
 
 ###4 CONCLUSION
