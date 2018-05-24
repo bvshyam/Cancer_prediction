@@ -1,0 +1,873 @@
+---
+title: Predicting the breast cancer by characteristics of the cell nuclei present in the image
+author: "Marco Siqueira Campos, Shyam BV, Christopher Estevez, Ahmed Sajjad"
+date: 'May 20, 2018'
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '3'
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+mainfont: Calibri Light
+fontsize: 12pt
+---
+
+```{r global_options, echo=FALSE, include=TRUE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/', echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+#Abstract
+Early diagnosis of any disease plays a critical role in successful treatment of patients. 
+Every year thousands of patients are diagnosed with breast cancer. Though large amounts of 
+patient clinical data is collected and stored every year, but a small subset of predictive 
+factors are used in determining outcomes. 
+
+In this project, we use a data mining approach to diagnose breast cancer. The data-driven 
+approach used here can efficiently process clinical dataset to discover patterns and reveal 
+hidden information for early detection and successfully treatment of breast cancer patients.
+ 
+#Introduction and Background
+
+Breast cancer is one of the most severe cancers. It has taken hundreds of thousands of 
+lives every year. Early prediction of breast cancer plays an important role in successful 
+treatment and saving lives of thousands of patients every year. However, the conventional 
+approaches are limited in providing such capability. The recent breakthrough of 
+data analytics and data mining techniques have opened a new door for healthcare diagnostic 
+and prediction.
+
+Over the past decades medical records and clinical data have been collected and stored in 
+electronic databases. Both the government and other public organizations have accelerated 
+the technology toward transparency by making massively stored data usable, searchable, 
+and actionable. Despite of the massive healthcare databases available, only small part 
+of the data has been used by domain-experts for diagnostic and cure of diseases. 
+This is because the massive healthcare data is too complex and voluminous to be effectively 
+and efficiently processed and analyzed by the conventional methods. 
+
+Most breast cancers are detected by patients as a lump in the breast. These lumps can be benign
+or malignant. It is the physician's responsibility to diagnose the cancer and determine whether 
+it is benign or malignant. 
+
+There are different ways of diagnosing breast cancer. For example, mammography and surgical biopsy.
+Our main purpose in this project is to predict if the cells (tumor) are benign or malignant (cancer), 
+based on dimensional characteristics of the nuclei cells. As secondary objectives we want to know if 
+the quality of our prediction is similar to the scientific articles and if linear models are still 
+competitive against nonlinear models, based on rules / trees.
+
+Features are computed from a digitized image of a fine needle aspirate (FNA) of a breast mass. 
+FNA's involves taking one or more samples of breast cells using a fine needle and syringe. 
+They describe characteristics of the cell nuclei present in the image. 
+
+The mean, standard error, and "worst" or largest (mean of the three largest values) of these 
+dimensional features were computed for each image, resulting in 30 features.  For instance, 
+field 3 is Mean Radius, field 13 is Radius SE, field 23 is Worst Radius.
+
+#Data Source
+Data repository UC-Irvine, Breast Cancer Wisconsin (Diagnostic) Data Set from University of Wisconsin, Clinical Sciences Center.  
+  
+
+#Methodology
+
+
+
+## Data Exploration 
+
+Variable description
+
+1) ID number
+2) diagnosis (M = malignant, B = benign), this we changed for (1 = malignant, 0 = benign).
+
+Ten real-valued features are computed for each cell nucleus: 
+
+a) radius (mean of distances from center to points on the perimeter)
+b) texture (standard deviation of gray-scale values)
+c) perimeter (the distance around a shape)
+d) area
+e) smoothness (local variation in radius lengths)
+f) compactness ($(perimeter^2 / area) - 1.0$)
+g) concavity (severity of concave portions of the contour)
+h) concave points (number of concave portions of the contour)
+i) symmetry
+j) fractal dimension (coastline approximation - 1)
+
+For each variable we have 3 different statistics: Mean, standard error and worst case.
+We have a total of 30 predictors.
+
+The change `diagnosis` predictor from malignant for 1, benign for 0, help us to see relationship beetwen the response and the predictors, and was done in this phase.
+
+
+```{r, message=FALSE, warning=FALSE}
+#load libraries
+library("xlsx")
+library("psych")
+library("GGally")
+library("ggplot2")
+library("caret")
+library("dplyr")
+library("pROC")
+library("car")
+library("leaps")
+library("sjstats")
+library("PerformanceAnalytics")
+library("factoextra")
+library("BGLR")
+library("keras")
+library("dplyr")
+library("kableExtra")
+library("Cubist")
+```
+
+
+
+```{r, echo=FALSE, cache=TRUE}
+#load dataset
+
+url<-"https://raw.githubusercontent.com/bvshyam/Cancer_prediction/master/data/data_with groups.xlsx"
+
+temp.file <- paste(tempfile(),".xlsx",sep = "")
+download.file(url,temp.file, mode="wb")
+WDBCdata<<-xlsx::read.xlsx(temp.file, sheetName = "ics data", header=T)
+
+
+#WDBCdata<- read.xlsx("data/data_with groups.xlsx", sheetName = "ics data")
+```
+
+### Data Analysis
+
+Below is the structure and the summary of the dataset.
+
+
+```{r, echo=FALSE, cache=FALSE}
+
+# First step the id will be removed to avoid any future trouble
+# change M = malignant for 1 and B for B = benign for zero
+WDBCdata$mycol<-NULL
+WDBCdata$id<-NULL
+WDBCdata$diagnosis<-ifelse(WDBCdata$diagnosis == "B", 0, 1)
+```
+
+
+```{r, cache=FALSE}
+#str(WDBCdata)
+#summary(WDBCdata)
+```
+
+```{r}
+# summary stats
+WDBC_tbl<-describe(WDBCdata,IQR=T)[,c(1:5,8:10,11,12)]
+kable(round(WDBC_tbl,2), caption = "Selected Stats", format = "latex") %>% 
+        kable_styling(latex_options = "striped", font_size=10)
+rm(WDBC_tbl)
+```
+
+Below are the inference of the summary.
+
+1. `diagonsis` is the target variable.
+2. `myCol and id` are index. It is not required in predictors.
+3. There is no `NA` in all the predictors. Imputation is not required.
+4. Each variable is in different scale.
+5. Each cell nuclei has different properties like `radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry_mean, fractal dimenstion`. Dataset also has Mean, standard error and the worst measure of that particular cell.
+
+As a next step we will remove the unwanted variables and analyze individual set of dimensions.
+
+### Data Visualization
+
+
+
+#### Histogram
+
+As a first visualization, we will plot the histogram of all the predictor variables.
+
+
+Histograms
+
+```{r, echo=FALSE, fig.width=7, fig.height=8, message=F, warning=F}
+library("Hmisc")
+hist.data.frame(WDBCdata, n.unique=1, mtitl = "Breast Cancer Histogram")
+```
+\begin{center}
+fig. 1
+\end{center}
+
+
+#### BOX-PLOT
+
+
+Lets split the predictors according to its category
+
+
+```{r, cache=TRUE}
+WDBCdata_mean = cbind(diagnosis=WDBCdata[,c(1)], WDBCdata[,c(2:11)])
+WDBCdata_se = cbind(diagnosis=WDBCdata[,c(1)], WDBCdata[,c(12:21)])
+WDBCdata_worst = cbind(diagnosis=WDBCdata[,c(1)], WDBCdata[,c(22:31)])
+
+```
+
+
+BOX-PLOT
+
+```{r ,echo=FALSE, fig.align="center", fig.height=4, fig.width=6, cache=FALSE}
+# boxplot
+par(cex.axis=0.8) # is for x-axis
+boxplot(WDBCdata_mean, las=2, col="green", main="Breast Cancer Box-Plot for Mean", ylim = c(0,150))
+boxplot(WDBCdata_se, las=2, col="green", main="Breast Cancer Box-Plot for SE", ylim = c(0,150))
+boxplot(WDBCdata_worst, las=2, col="green", main="Breast Cancer Box-Plot for Worst", ylim = c(0,150))
+
+```
+  
+\begin{center}
+fig. 3
+\end{center}
+
+Some inference from the chart
+
+1. Nuclei mean of the perimeter and area is higher.
+2. Standard Error of the Area is higher.
+3. In worst nuclei scenario, area has extremly high values. 
+
+
+#### Correlation matrix
+
+Now lets plot the correlation plots to understand more about the correlated predictors.
+
+
+```{r, cache=FALSE}
+#Mean
+chart.Correlation(WDBCdata_mean,histogram=TRUE,pch=19)
+
+```
+  
+\begin{center}
+fig. 4
+\end{center}
+```{r, cache=FALSE}
+# SE
+chart.Correlation(WDBCdata_se,histogram=TRUE,pch=19)
+```
+  
+\begin{center}
+fig. 5
+\end{center}
+
+```{r, cache=FALSE}
+# Worst
+chart.Correlation(WDBCdata_worst,histogram=TRUE,pch=19)
+```
+  
+\begin{center}
+fig. 6
+\end{center}
+
+
+Below is the overall correlation matrix of all the predictors
+
+
+```{r ,echo=FALSE, cache=FALSE}
+ggcorr(WDBCdata, nbreaks=8, palette='PRGn', label=TRUE, label_size=2, size = 1.8, label_color='black') + ggtitle("Breast Cancer Correlation Matrix") + theme(plot.title = element_text(hjust = 0.5, color = "grey15"))
+```
+
+\begin{center}
+fig. 7
+\end{center}
+
+Correlation list (only high correlation values, r>0.9)
+```{r ,echo=FALSE, cache=FALSE}
+z = cor(WDBCdata)
+
+z = round(z,4)
+z[abs(z)<0.9]=NA # remove low relationship
+z[lower.tri(z,diag=TRUE)]=NA  #Prepare to drop duplicates and meaningless information
+z=as.data.frame(as.table(z))  #Turn into a 3-column table
+z=na.omit(z)  #Get rid of the junk we flagged above
+z=z[order(-abs(z$Freq)),]    #Sort by highest correlation (whether +ve or -ve)
+z
+rm(z)
+
+
+```
+
+#### Diagnosis Plots
+
+Lets deepdive into response variable and see its distribution.
+
+```{r, cache=FALSE, fig.align="center", fig.height=4, fig.width=4}
+#qplot(as.factor(WDBCdata$diagnosis))+geom_bar() + #labs(x='Diagnosis', y ='Count')  
+
+barplot(table(WDBCdata$diagnosis), col="blue", ylab="count", xlab="Diagnosis", main="Response distribution")
+
+
+```
+  
+\begin{center}
+fig. 8
+\end{center}
+
+Summary of data explorations findings:
+
+- Most histograms present very asymmetric behavior with similar to exponential distribution.
+- Some predictor look like exponential distribuition as `radius_se`, `perimeter_se`, `area_se`, `concavity_se` and `fractal_dimension_se`.
+- There is no true outliers, the outliers at box-plot is due the kind of distribution.
+- There is no missing.
+- we identified 21 pairs of highly correlated predictors, r> 0.9, this was due to the choice of predictors that are associated, measures things related: radius, perimeter and area.
+- There are 14 predictors related with the response, `Diagnosis`, with r>=0.6, this is a good news.  
+
+## Data Preparation
+
+To solve the highly correlated variables, we will follow two types. 
+
+1. Predictors transformation and remove correlated variables.
+2. PCA transformed correlated variables.
+
+### Predictors transformation and remove correlated variables
+
+In this method following steps will be performed:
+
+- Solve high correlations values, the follow predictors were removed: `area_mean`, `radius_mean`, `area_worst`, `compactness_mean`, `perimeter_worst`, `compactness_se`. `concavity_worst`and `fractal_dimension_worst`.
+- Verify the data behavior of power transformation for the follow predictors: `radius_se`, `perimeter_se`, `area_se` and `fractal_dimension_se`.
+
+
+There are some predictor variables which are skwed. We can perform power transformations on those variables.
+
+```{r ,echo=FALSE,fig.align="center", fig.height=3, fig.width=5, cache=FALSE}
+
+bc1<-BoxCoxTrans(WDBCdata$radius_se)
+bc2<-BoxCoxTrans(WDBCdata$perimeter_se)
+bc3<-BoxCoxTrans(WDBCdata$area_se )
+bc5<-BoxCoxTrans(WDBCdata$fractal_dimension_se)
+
+par(mfrow=c(1,2))
+hist(WDBCdata$radius_se, main="Histogram radius_se", xlab="", col="yellow")
+hist(WDBCdata$radius_se^bc1$lambda, main="Histogram radius_se transf.", xlab="", col="green")
+par(mfrow=c(1,2))
+hist(WDBCdata$perimeter_se, main="Histogram perimeter_se", xlab="", col="yellow")
+hist(WDBCdata$perimeter_se^bc2$lambda, main="Histogram perimeter_se transf.", xlab="",col="green")
+par(mfrow=c(1,2))
+hist(WDBCdata$area_se, main="Histogram area_se",xlab="", col="yellow")
+hist(WDBCdata$area_se^bc3$lambda, main="Histogram area_se transf.",xlab="",col="green")
+par(mfrow=c(1,2))
+hist(WDBCdata$fractal_dimension_se, main="Histogram dimension_se",xlab="", col="yellow")
+hist(WDBCdata$fractal_dimension_se^bc5$lambda, main="Histogram dimension_se transf.",xlab="",col="green")
+par(mfrow=c(1,1))
+
+```
+\begin{center}
+fig. 9
+\end{center}
+
+As we saw in the chart, figure 3, the power transformation, has improved the distribution.
+
+Now we will remove the highly correlated variables and then split the data in two data set, Train data set with 70% and Test data set with 30% of all data. 
+
+```{r, echo=FALSE, cache=FALSE}
+
+WDBCdatafull<-WDBCdata #copy data set
+
+WDBCdata<-subset(WDBCdata, select=-c(area_mean,radius_mean,area_worst,compactness_mean,perimeter_worst,compactness_se,concavity_worst,fractal_dimension_worst)) # remove predictors
+
+
+# WDBCdatafull all predictors
+# WDBCdata remove highly correlated predictors
+
+
+set.seed(123)
+indx<-createDataPartition(WDBCdata$diagnosis, p=0.7, list=FALSE)
+
+train_x<-WDBCdata[indx,-1]
+train_y<-WDBCdata$diagnosis[indx] 
+
+test_x<-WDBCdata[-indx,-1]
+test_y<-WDBCdata$diagnosis[-indx]
+
+
+# the subset bellow is with full predictors, cannot be used with logistic model, only can be used with model that accept highly correlated predictors.
+
+trainfull_x<-WDBCdatafull[indx,-1]
+trainfull_y<-WDBCdatafull$diagnosis[indx]
+
+testfull_x<-WDBCdatafull[-indx,-1]
+testfull_y<-WDBCdatafull$diagnosis[-indx]
+
+```        
+
+
+```{r, echo=FALSE, cache=FALSE}
+# applying the power transformation for the test and train data set
+
+train_x$radius_se<-train_x$radius_se^bc1$lambda
+train_x$perimeter_se<-train_x$perimeter_se^bc2$lambda    
+train_x$area_se<-train_x$area_se^bc3$lambda
+train_x$fractal_dimension_se<-train_x$fractal_dimension_se^bc5$lambda
+
+test_x$radius_se<-test_x$radius_se^bc1$lambda
+test_x$perimeter_se<-test_x$perimeter_se^bc2$lambda    
+test_x$area_se<-test_x$area_se^bc3$lambda
+test_x$fractal_dimension_se<-test_x$fractal_dimension_se^bc5$lambda
+
+``` 
+
+### PCA transformed correlated variables
+
+In this type, as the variables are highly correlated, we will transform the predictors using principal component analysis(PCA). PCA will provide the transformed variables.
+
+```{r, cache=FALSE,fig.height=4, fig.width=6}
+
+pca_wdbc <- prcomp(train_x[,2:ncol(train_x)],center = TRUE, scale=TRUE)
+pca_wbdc_test<-prcomp(test_x[,2:ncol(test_x)],center = TRUE, scale=TRUE)
+
+plot(pca_wdbc, type='l', main="PCA - Principal Components Analysis Chart", col="red")
+
+#summary(pca_wdbc$x)
+```
+  
+\begin{center}
+fig. 10
+\end{center}
+Above summary shows that 10 PCA's shows the 95% of variation. And 17 PCA's shows 99.1% of variation in the dataset. We will select 17 PCA's to show the variation in the data. It also has a clusters of around 7. Now lets see the clusters in detail.
+
+```{r, cache=FALSE}
+
+
+pca_wdbc_var <- get_pca_var(pca_wdbc)
+
+
+
+res <- kmeans(pca_wdbc_var$coord,centers = 5, nstart=25)
+grp <- as.factor(res$cluster)
+
+fviz_pca_var(pca_wdbc, col.var=grp, palette='jco', legend.title='Cluster')
+
+```
+ 
+\begin{center}
+fig. 11
+\end{center}
+
+
+
+ 
+##MODELS 
+The analyzed models are divided into two families:
+<li> Linear models: Logistic regression, Probit regression and Bayesian Binary regression </li>
+<li> Nonlinear models: Cubist Model, Neural Network Model and SVM (Support Vector Machine) </li>
+
+##Linear Models
+
+###Logistic Regression
+
+Logistic Regression is used to estimate the probability of a binary response based on one ore more predictors. The model itself simply models probability of output in terms of input, and does not perform statistical classification (it is not a classifier), though it can be used to make a classifier, for instance by choosing a cutoff value and classifying inputs with probability greater than the cutoff as one class, below the cutoff as the other.
+
+Now we will build different models and compare the results. 
+
+As a initial set of models, we will try logistic regression with different variations in it.
+
+ **Logistic Regression Model(Logit) with all variables**
+
+As a first model, we will build logistic regression model which has all the predictors with correlated variables..
+
+```{r, cache=FALSE}
+model_11_logit_full <-glm(trainfull_y ~ . ,family=binomial, trainfull_x)
+summary(model_11_logit_full)
+```
+
+None of the predictors are signficant due to correlated variables. This model did not provide any results and did not converge.
+
+#### Logistic Regression without correlated variables
+
+```{r, cache=FALSE}
+model_12_logit_corr <-glm(train_y~.,family=binomial,data=train_x)
+summary(model_12_logit_corr)
+
+```
+
+This time the model did converge, however it seems many variables are not significant. We will perform backward stepwise selection of the model.
+
+```{r, cache=FALSE}
+model_13_logit_corr_final <- update(model_12_logit_corr, .~.-symmetry_se-concave.points_worst-texture_se-perimeter_se-radius_se-symmetry_mean-fractal_dimension_mean-concave.points_mean-texture_mean-compactness_worst-symmetry_worst-smoothness_mean-area_se-smoothness_se )
+summary(model_13_logit_corr_final)
+```
+
+Now all the variables are statistically significant and AIC got reduced. 
+
+Following predictors were chosen:
+- `perimeter_mean` 
+- `concavity_mean`
+- `concavity_se`
+- `concave.points_se`
+- `fractal_dimension_se`
+- `radius_worst` 
+- `texture_worst`
+- `smoothness_worst`
+
+Now lets try out other models.
+
+#### Logistic regression on PCA variables
+
+We can also perform logistic regression on PCA transformed variables. However, the problem is the model is not interpretable. One of the biggest advantage of Logistic regression is interpretability. By using PCA variables, we loose that advantage. But lets see how the model reacts to the PCA variables.
+
+
+```{r, cache=FALSE}
+
+model_14_pca <-glm( train_y~.-PC11 -PC6 -PC8 -PC10 -PC5 -PC9 -PC13 -PC14 -PC12 -PC7,family=binomial,data=pca_wdbc$x[,c(1:14)] %>% data.frame())
+summary(model_14_pca)
+
+```
+PCA models are difficult to interpret. So this model does not provide any other information. 
+
+### Probit Regression 
+
+In Probit Regression, the dependent variable can take only two values. The purpose of the model is to estimate the probability that an observation with a particular characteristics will fall into a specific one of the categories. A probit model is a popular specification for an ordinal or a binary response model.
+
+Now lets perform logistic regression with probit link function. After backward stepwise eliminiation, below is the model we got.
+
+```{r, cache=FALSE}
+model_15_probit <-glm( train_y~.-perimeter_se-texture_worst-concave.points_worst-symmetry_se-fractal_dimension_mean-symmetry_mean-compactness_worst-concavity_se-concave.points_se-concavity_mean-smoothness_se-texture_se-symmetry_worst,family=binomial(link = 'probit'),data=train_x)
+summary(model_15_probit)
+```
+Seems there are nine predictors which are significant. It has similar AIC score compared to logit model.
+
+
+###Linear Models Summary
+
+Train set performance
+
+```{r, cache=FALSE}
+#Convert to 0/1
+conv_13_logit_corr <- ifelse(predict(model_13_logit_corr_final) > 0.5,1,0)
+#conf_13_logit_corr <- confusionMatrix(conv_13_logit_corr, train_y, positive="1")
+conf_13_logit_corr <- confusionMatrix(table(conv_13_logit_corr, train_y), positive = "1")
+
+conv_14_pca <- ifelse(predict(model_14_pca) > 0.5,1,0)
+#conf_14_pca <- confusionMatrix(conv_14_pca, train_y, positive="1")
+conf_14_pca <- confusionMatrix(table(conv_14_pca, train_y), positive="1")
+
+conv_15_probit <- ifelse(predict(model_15_probit ) > 0.5,1,0)
+#conf_15_probit <- confusionMatrix(conv_15_probit,train_y,positive="1")
+conf_15_probit <- confusionMatrix(table(conv_15_probit, train_y), positive="1")
+
+# compute accuracy
+
+acc13<-conf_13_logit_corr$overall["Accuracy"]
+acc14<-conf_14_pca$overall["Accuracy"]
+acc15<-conf_15_probit$overall["Accuracy"]
+
+# compute AUC
+
+auc13<-roc(train_y ~ conv_13_logit_corr, train_x)$auc
+auc14<-roc(train_y ~ conv_14_pca, train_x)$auc
+auc15<-roc(train_y ~ conv_15_probit, train_x)$auc
+
+df<-data.frame(accuracy=c(acc13,acc14,acc15),auc=c(auc13,auc14,auc15))
+row.names(df)<-c("Logistic","Logistic PCA","Probit")
+
+
+kable(round(df,3), caption = "Performance metrics train")        
+
+```
+  
+Test set performance
+
+```{r, cache=FALSE}
+#Convert to 0/1
+conv_13_logit_t <- ifelse(predict(object=model_13_logit_corr_final, newdata=test_x, type="response") > 0.5,1,0)
+#conf_13_logit_t <- confusionMatrix(conv_13_logit_t, test_y, positive="1")
+conf_13_logit_t <- confusionMatrix(table(conv_13_logit_t, test_y), positive="1")
+
+conv_14_pca_t <- ifelse(predict(model_14_pca, newdata=as.data.frame(pca_wbdc_test$x[,c(1:14)]), type="response") > 0.5,1,0)
+#conf_14_pca_t <- confusionMatrix(conv_14_pca_t, test_y, positive="1")
+conf_14_pca_t <- confusionMatrix(table(conv_14_pca_t, test_y), positive="1")
+
+conv_15_probit_t <- ifelse(predict(model_15_probit, newdata=test_x, type="response") > 0.5,1,0)
+#conf_15_probit_t <- confusionMatrix(conv_15_probit_t, test_y, positive="1")
+conf_15_probit_t <- confusionMatrix(table(conv_15_probit_t, test_y), positive="1")
+
+# compute accuracy
+
+acc13_t<-conf_13_logit_t$overall["Accuracy"]
+acc14_t<-conf_14_pca_t$overall["Accuracy"]
+acc15_t<-conf_15_probit_t$overall["Accuracy"]
+
+# compute AUC
+
+auc13_t<-roc(test_y ~ conv_13_logit_t, test_x)$auc
+auc14_t<-roc(test_y ~ conv_14_pca_t, test_x)$auc
+auc15_t<-roc(test_y ~ conv_15_probit_t, test_x)$auc
+
+df<-data.frame(accuracy=c(acc13_t,acc14_t,acc15_t),auc=c(auc13_t,auc14_t,auc15_t))
+row.names(df)<-c("Logistic","Logistic PCA","Probit")
+
+kable(round(df,3), caption = "Performance metrics test")   
+```
+
+##Non-linear Models
+###Cubist Model
+
+Cubist is a prediction-oriented regression model that combines the ideas in Quinlan (1992) and Quinlan (1993).  
+Although it initially creates a tree structure, it collapses each path through the tree into a rule. A regression model is fit for each rule based on the data subset defined by the rules. The set of rules are pruned or possibly combined. and the candidate variables for the linear regression models are the predictors that were used in the parts of the rule that were pruned away. This part of the algorithm is consistent with the "M5" or Model Tree approach.  
+Cubist generalizes this model to add boosting (when committees > 1) and instance based corrections (see predict.cubist()). The number of instances is set at prediction time by the user and is not needed for model building.
+
+
+```{r, eval=TRUE, cache=TRUE, include=FALSE}
+
+
+
+set.seed(123)
+ctrl=(trainControl(method="repeatedcv", repeats=5))
+
+c<-c(100)
+n<-c(3,4)
+
+model_31_cubit<-train(train_x,train_y, method="cubist",
+                preProcess = c("center", "scale"),
+                tuneGrid = expand.grid(committees=c,neighbors=n),
+                trControl = ctrl)
+
+``` 
+
+Predictor importance from cubist model
+
+```{r, eval=TRUE, cache=TRUE, include=TRUE}
+dotPlot(varImp(model_31_cubit), main="Cubist Predictor importance")
+
+``` 
+
+\begin{center}
+fig. 4
+\end{center}
+
+
+### Average Neural Network Model
+
+Average Neural Networks regression AVNNET. A Neural Network (NN) is a graph of computational units that receive inputs and transfer the result into an output that is passed on. The units are ordered into layers to connect the features of an input vector to the features of an output vector. With training, such as the Back-Propagation algorithm, neural networks can be designed and trained to model the underlying relationship in data.
+
+```{r, eval=TRUE, include=FALSE, cache=TRUE}
+set.seed(123)
+
+ctrl=(trainControl(method="repeatedcv", repeats=5))
+nnetGrid<-expand.grid(.decay=c(0.01,0.1), .size=1, .bag=FALSE)
+
+model_41_neural<-train(x=train_x,y=as.factor(train_y),method="avNNet",
+                 tuneGrid = nnetGrid,
+                 trControl = ctrl,
+                 preProcess = c("center","scale"),
+                 linout=TRUE,
+                 trace=FALSE,
+                 MaxNWts=10*(ncol(train_x)+1)+10+1,
+                 maxit=500)
+
+```
+
+```{r, eval=TRUE, include=TRUE, cache=TRUE}
+model_41_neural
+```
+
+
+###SVM
+Support Vector Machines (SVM) are a class of methods, developed originally for classification, that find support points that best separate classes. SVM for regression is called Support Vector Regression (SVM).
+
+
+```{r, cache=TRUE, eval=TRUE}
+set.seed(123)
+ctrl=(trainControl(method="repeatedcv", repeats=5))
+
+SVM_Radial_Fit = train(x=train_x,y=as.factor(train_y), method = "svmRadial",
+preProc = c("center", "scale"),
+tuneLength = 14,trControl = ctrl)
+
+SVM_Radial_Fit
+
+
+set.seed(123)
+Chris_SVM_Pred = data.frame(Pred= predict(SVM_Radial_Fit, newdata = test_x))
+
+
+plot(SVM_Radial_Fit, scales = list(x = list(log = 2)))
+
+#Chris_Con =confusionMatrix(Chris_SVM_Pred$Pred,test_y,dnn = c("Prediction", "Reference"))
+
+#Chris_SVM_acc = data.frame( Val =postResample(pred = Chris_SVM_Pred$Pred, obs = test_y))
+
+#fourfoldplot(Chris_Con$table,main=paste("SVM (",round(Chris_SVM_acc[1,]*100),"%)",sep=""),color = c("#ed3b3b", "#0099ff"))
+
+#Chris_Con
+```
+
+###Linear Models Summary
+
+Train set performance
+
+```{r, cache=FALSE}
+#Convert to 0/1
+conv_41_neural <- predict(model_41_neural) 
+#conf_41_neural<-confusionMatrix(conv_41_neural, train_y, positive="1")
+conf_41_neural<-confusionMatrix(table(conv_41_neural, train_y), positive="1")
+
+conv_21_svm <- predict(SVM_Radial_Fit)
+#conf_21_svm<-confusionMatrix(conv_21_svm, train_y, positive="1")
+conf_21_svm<-confusionMatrix(table(conv_21_svm, train_y), positive="1")
+
+conv_31_cubit <- ifelse(predict(model_31_cubit) > 0.5,1,0)
+#conf_31_cubit<-confusionMatrix(conv_31_cubit, train_y, positive="1")
+conf_31_cubit<-confusionMatrix(table(conv_31_cubit, train_y), positive="1")
+
+# compute accuracy
+
+acc41<-conf_41_neural$overall["Accuracy"]
+acc21<-conf_21_svm$overall["Accuracy"]
+acc31<-conf_31_cubit$overall["Accuracy"]
+
+# compute AUC
+
+auc41<-roc(train_y ~ as.numeric(as.character(conv_41_neural)), train_x)$auc
+auc21<-roc(train_y ~ as.numeric(as.character(conv_21_svm)), train_x)$auc
+auc31<-roc(train_y ~ conv_31_cubit, train_x)$auc
+
+df1<-data.frame(accuracy=c(acc41,acc21,acc31),auc=c(auc41,auc21,auc31))
+row.names(df1)<-c("AvNeural","SVM","Cubist")
+
+kable(round(df1,3), caption = "Performance metrics train")        
+
+```
+  
+Test set performance
+
+```{r, cache=FALSE}
+#Convert to 0/1
+conv_41_neural_t <- predict(model_41_neural, newdata=test_x, type="raw") 
+#conf_41_neural_t<-confusionMatrix(conv_41_neural_t,test_y,positive="1")
+conf_41_neural_t<-confusionMatrix(table(conv_41_neural_t, test_y), positive="1")
+
+conv_21_svm_t <- predict(SVM_Radial_Fit,newdata=test_x, type="raw")
+#conf_21_svm_t<-confusionMatrix(conv_21_svm_t,test_y,positive="1")
+conf_21_svm_t<-confusionMatrix(table(conv_21_svm_t, test_y), positive="1")
+
+conv_31_cubit_t <- ifelse(predict(model_31_cubit,newdata=test_x) > 0.5,1,0)
+#conf_31_cubit_t<-confusionMatrix(conv_31_cubit_t,test_y,positive="1")
+conf_31_cubit_t<-confusionMatrix(table(conv_31_cubit_t, test_y), positive="1")
+
+# compute accuracy
+
+acc41_t<-conf_41_neural_t$overall["Accuracy"]
+acc21_t<-conf_21_svm_t$overall["Accuracy"]
+acc31_t<-conf_31_cubit_t$overall["Accuracy"]
+
+# compute AUC
+
+auc41_t<-roc(test_y ~ as.numeric(as.character(conv_41_neural_t)), test_x)$auc
+auc21_t<-roc(test_y ~ as.numeric(as.character(conv_21_svm_t)), test_x)$auc
+auc31_t<-roc(test_y ~ conv_31_cubit_t, test_x)$auc
+
+df2<-data.frame(accuracy=c(acc41_t,acc21_t,acc31_t),auc=c(auc41_t,auc21_t,auc31_t))
+row.names(df2)<-c("AvNeural","SVM","Cubist")
+
+kable(round(df2,3), caption = "Performance metrics test")        
+
+```
+
+
+##BEST LINEAR AND NONLINEAR MODELS
+
+Logistic Regression (reduced without hightly corr predictors)    
+Cubistic
+
+
+## MODEL ANALYSIS AND DIAGNOSTIC 
+
+In below section, we will detail the Logistic Regression and Cubist performance
+
+### Logistic regression (reduced model without hightly corr predictors)
+
+
+```{r, cache=TRUE}
+
+# Function for printing confusion matrix
+confusion_analysis <- function(df,model){
+  # Threshold value is 0.5, positive class is 1
+  
+  predicted = if_else(predict(model,df)>=0.5, 1,0)
+  confusionMatrix(data = predicted,
+                reference = df$Diagnosis,
+                positive = "1")
+}
+
+# Function for calculating evaluation metrics
+summary_analysis <- function(df,model){
+  print(summary(model))
+  print(paste0("BIC: ",BIC(model)))
+  print(paste0("VIF: ",vif(model)))
+
+  n = length(df$target)
+  print(paste0("Naglekerke-pseudo-R2:",(1-exp((model$dev-model$null)/n))/(1-exp(-model$null/n))))
+  print("Confusion Matrix:")
+  confusion_analysis(df,model)
+}
+
+
+```
+
+Confusion Matrix Test set
+
+```{r, cache=TRUE, fig.align="center", fig.height=3, fig.width=3}
+
+conf_13_logit_t
+
+fourfoldplot(conf_13_logit_t$table,color = c("#ed3b3b", "#0099ff"))
+```
+
+
+```{r include=FALSE, eval=TRUE, message=FALSE, warning=FALSE, include=TRUE, cache=TRUE}
+RocCurve <- roc(response = test_y,
+                ifelse(predict(object=model_13_logit_corr_final, newdata=test_x, type="response") > 0.5,1,0),levels = c(1,0))
+plot(RocCurve, ylab = "Sensitivity", xlab = "1 - Specificity", main = "ROC Curve - Logistic", col = "red")
+```
+
+### Cubistic Regression
+
+```{r, cache=TRUE, fig.align="center", fig.height=3, fig.width=3}
+conf_31_cubit_t
+fourfoldplot(conf_31_cubit_t$table,color = c("#ed3b3b", "#0099ff"))
+```
+
+```{r include=TRUE, eval=TRUE, message=FALSE, warning=FALSE, cache=FALSE}
+rocCurve <- roc(response = test_y, predictor = predict(model_31_cubit,newdata = test_x), levels = c(1,0))
+plot(rocCurve, ylab = "Sensitivity", xlab = "1 - Specificity", main = "ROC Curve - Cubist", col = "red")
+```
+
+#Comparison with scientific papers
+
+##Simple Learning Algorithms for Training Support Vector Machines
+Charles Campbell and Nello Cristianini Cover in depth the usage of the Kernel-Adatron Algorithm in their paper  Simple Learning Algorithms for Training Support Vector Machines[5]. Their method was adapted from the Statistical Mechanics approach to learning[8]. The core concept of implementing this algorithm is to find hyperplanes which have optimal stability.
+	The authors of the paper tested different statistical models before applying the Kernel-Adaton support Vector Machine model. Non SVM models include CART, RBF, and Linear Discriminant Analysis(LDA).  CART models are representative of a binary tree where each root node represents a single input variable (x) and is then split on that variable, the leaf nodes of the tree will contain the output variable (y) that will make the prediction[9]. Radial Basis Function(RBF) is a type of model that can be employed for methods that require Linear or nonlinear problems. These types of functions have been associated with a single layer and multilayer networks[10]. Linear Discriminant Analysis(LDA) use statistical properties of the data that are calculated by each class for input variables in a single variable. For multiple variables, the properties are calculated over the multivariate Gaussian[11]. Multi-Layer Neural Network(Back-Propagation) is a supervised learning technique that consists of at least three-layered nodes, where each node is a neuron with a nonlinear activation function.
+	To achieve the ideal model performance, SLATSVM[5] used 10 fold cross-validation and the whole dataset. The results for each model were the following CART 94.2%, RBF 95.9%, LDA 96.0%, Multi-Layer Neural Network(Back-Propagation) 96.6% with the optimal performance being 99.48%. 
+	The optimal model was achieved using cross-validation	10 fold, Centering and scaling the variables. The model used was svmRadial applied using the caret package in R-3.3.1. The Data was split 70% training and 30% testing. The performance was 98.7%  against the training set. While high in accuracy when the code was tested against the holdout dataset, the accuracy increased slightly to 98.8% percent.
+	The svmRadial model performed with high accuracy in the training and test set. Other parameters that were exceptional where Area Under the Curve(AUC) with a value of 98.3% and 98.8 in the test set. The AUC captures the efficiency of the model in this example 90% being an A grade.
+
+#Summary and Conclusions
+
+From the analysis we can conclude that the cubist and the logistic models have similar performance. The logistic model seems to be the easiest to implement whereas nonlinear models like SVM are implementation complexity. In logistic models we can see the coefficient of all predictors. Although, the logistic model is more interpretable than cubist model, the cubist model seems to be best model because the accuracy in the cubist model is the highest `0.976`.
+
+REFERENCES:  
+[1] Dua, D. and Karra Taniskidou, E. (2017). UCI Machine Learning Repository   [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.    
+[2] https://stackoverflow.com/questions/7074246/show-correlations-as-an-ordered-list-not-as-a-large-matrix  
+[3] https://cran.r-project.org/web/packages/Cubist/Cubist.pdf  
+[4] Andrew I. Schein and Lyle H. Ungar. A-Optimality for Active Learning of Logistic Regression Classifiers. Department of Computer and Information Science Levine Hall.  
+[5] Charles Campbell and Nello Cristianini. Simple Learning Algorithms for Training Support Vector Machines. Dept. of Engineering Mathematics.  
+[6] O.L. Mangasarian, W.N. Street and W.H. Wolberg. Breast cancer diagnosis and prognosis via linear programming. Operations Research, 43(4), pages 570-577, July-August 1995.  
+[7] Kuhn, Johnson, Applied Predictive Modeling, Springer 
+[8] Watkin, T., Ran, A. & Biehl, M. (1993). The Statistical
+Mechanics of Learning a Rule, Rev. Mod. Phys.
+65(2).
+[9]Brownlee, J., Ph.D. (2017, September 20). Classification And Regression Trees for Machine Learning. Retrieved May 20, 2018, from https://machinelearningmastery.com/classification-and-regression-trees-for-machine-learning/
+[10]Mark J L Orr. (1996). Introduction to Radial Basis Function Networks.
+[11]Brownlee, J., Ph.D. (2016, April 6).Linear Discriminant Analysis for Machine Learning. Retrieved May 20 2018, from https://machinelearningmastery.com/linear-discriminant-analysis-for-machine-learning/
+
+
+
+R code
+
+_______________________________________
+
+
+```{r, ref.label=knitr::all_labels(), echo=t, eval=F}
+
+```
